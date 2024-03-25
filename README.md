@@ -114,6 +114,95 @@ Results based on real-world production code using CodeLlama Instruct 13B show th
 It is yet to be seen whether bigger variants of the model (34B or 70B) or other/newer models such as Mixtral/Claude v3
 as found in Amazon Bedrock might yield better performance for these cases.
 
+## PCK_CHINOOK_REPORTS
+
+[`pck_chinook_reports.pkb`](scripts/pck_chinook_reports.pkb) contains some sample PL/SQL stored procedures that have
+been translated with this code and left as an example. You can check the results below.
+
+Results are presented directly as converted by the model, with only minor cosmetic changes for readability 
+(the unmodified output can be found in [`pck_chinook_reports.py`](scripts/converted/pck_chinook_reports.py)).
+
+### GET_ARTIST_BY_ALBUM
+
+PL/SQL code:
+
+```oraclesqlplus
+PROCEDURE GET_ARTIST_BY_ALBUM(P_ARTIST_ID ALBUM.TITLE%TYPE)
+IS
+V_ARTIST_NAME ARTIST.NAME%TYPE;
+BEGIN
+SELECT ART.NAME
+INTO V_ARTIST_NAME
+FROM ALBUM ALB
+         JOIN ARTIST ART USING (ARTISTID)
+WHERE ALB.TITLE = P_ARTIST_ID;
+DBMS_OUTPUT
+.
+PUT_LINE
+('ArtistName: '||V_ARTIST_NAME);
+END;
+```
+
+Converted python code:
+
+```python
+import cx_Oracle
+
+def get_artist_by_album(p_artist_id, connection):
+    cursor = connection.cursor()
+    query = "SELECT ART.NAME FROM ALBUM ALB JOIN ARTIST ART USING (ARTISTID) WHERE ALB.TITLE = :p_artist_id"
+    cursor.execute(query, {"p_artist_id": p_artist_id})
+    artist_name = cursor.fetchone()[0]
+    print(f"ArtistName: {artist_name}")
+```
+
+### CUST_INVOICE_BY_YEAR_ANALYZE
+
+PL/SQL code:
+
+```oraclesqlplus
+PROCEDURE CUST_INVOICE_BY_YEAR_ANALYZE
+AS
+V_CUST_GENRES VARCHAR2(200);
+BEGIN
+FOR V IN(SELECT CUSTOMERID, CUSTNAME, LOW_YEAR, HIGH_YEAR, CUST_AVG FROM TMP_CUST_
+INVOICE_ANALYSE)
+LOOP
+IF SUBSTR(V.LOW_YEAR, -4) > SUBSTR(V.HIGH_YEAR , -4) THEN
+SELECT LISTAGG(GENRE, ',') WITHIN GROUP (ORDER BY GENRE) INTO V_CUST_GENRES FROM
+(SELECT DISTINCT
+FUNC_GENRE_BY_ID(TRC.GENREID) AS GENRE
+FROM TMP_CUST_INVOICE_ANALYSE TMPTBL JOIN INVOICE INV USING(CUSTOMERID)
+JOIN INVOICELINE INVLIN
+ON INV.INVOICEID = INVLIN.INVOICEID
+JOIN TRACK TRC
+ON TRC.TRACKID = INVLIN.TRACKID
+WHERE CUSTOMERID=V.CUSTOMERID);
+DBMS_OUTPUT.PUT_LINE('Customer: '||UPPER(V.CUSTNAME)||' - Offer a Discount According
+To Preferred Genres: '||UPPER(V_CUST_GENRES));
+END IF;
+END LOOP;
+END;
+END;
+```
+
+Converted python code:
+
+```python
+import cx_Oracle
+
+def cust_invoice_by_year_analyze(connection):
+    cursor = connection.cursor()
+    cursor.execute("SELECT CUSTOMERID, CUSTNAME, LOW_YEAR, HIGH_YEAR, CUST_AVG FROM TMP_CUST_INVOICE_ANALYSE")
+    rows = cursor.fetchall()
+    for row in rows:
+        if int(row[2]) > int(row[3]):
+            cursor.execute("SELECT LISTAGG(GENRE, ',') WITHIN GROUP (ORDER BY GENRE) FROM (SELECT DISTINCT FUNC_GENRE_BY_ID(TRC.GENREID) AS GENRE FROM TMP_CUST_INVOICE_ANALYSE TMPTBL JOIN INVOICE INV USING(CUSTOMERID) JOIN INVOICELINE INVLIN ON INV.INVOICEID = INVLIN.INVOICEID JOIN TRACK TRC ON TRC.TRACKID = INVLIN.TRACKID WHERE CUSTOMERID=:CUSTOMERID)", {"CUSTOMERID": row[0]})
+            genres = cursor.fetchone()[0]
+            print("Customer: " + row[1].upper() + " - Offer a Discount According To Preferred Genres: " + genres.upper())
+
+```
+
 # Useful resources
 
 * [CodeLlama Jumpstart availability announcement](https://aws.amazon.com/blogs/machine-learning/code-llama-code-generation-models-from-meta-are-now-available-via-amazon-sagemaker-jumpstart/)
