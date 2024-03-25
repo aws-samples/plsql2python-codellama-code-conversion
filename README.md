@@ -1,6 +1,6 @@
 # Introduction
 
-This repo contains a non-trivial but not production-ready example of using an Amazon SageMaker Endpoint running
+This repo contains a sample of using an Amazon SageMaker Endpoint running
 [CodeLlama Instruct](https://aws.amazon.com/blogs/machine-learning/code-llama-code-generation-models-from-meta-are-now-available-via-amazon-sagemaker-jumpstart/)
 to convert PL/SQL code to Python.
 
@@ -24,7 +24,8 @@ cost implications of running it.
 The code has been tested to work in Python 3.11, you will also need:
 
 * The requirements in [`requirements.txt`](requirements.txt)
-* AWS quota to launch a `ml.g5.12xlarge` instance as a SageMaker inference endpoint (configurable 
+* A SageMaker endpoint running CodeLlama Instruct or, optionally, AWS quota to launch a `ml.g5.12xlarge` 
+  instance as a SageMaker inference endpoint (configurable 
   [here](https://eu-west-1.console.aws.amazon.com/servicequotas/home/services/sagemaker/quotas/L-65C4BD00)).
 * An AWS role with permission to create and invoke to SageMaker endpoints. Typically, SageMaker's default 
   execution role should work fine. When running in SageMaker, the default role will be specified, otherwise 
@@ -32,11 +33,14 @@ The code has been tested to work in Python 3.11, you will also need:
 
 ## Running the code
 
+In order to convert the code, you will need a SageMaker endpoint with CodeLlama Instruct already deployed.
+Sample code that deploys CodeLlama Instruct 13B is provided for convenience in 
+[`deploy_endpoint.py`](deploy_endpoint.py). You can find deployment instructions below.
+
 ### Deploying the endpoint
 
-In order to convert the code, you should first deploy the SageMaker endpoint. If you run the script in
-SageMaker, it should be able to deploy the endpoint correctly, otherwise you can pass the role name in
-the command line.
+If you run the script in SageMaker, it should be able to deploy the endpoint correctly, otherwise you can 
+pass the role name in the command line.
 
 ```bash
 # Deploy the endpoint using the default execution role
@@ -72,6 +76,10 @@ directory.
 The code will process the input code using the flow below, which includes some of the error handling
 strategies mentiones in the [introduction](#introduction).
 
+The code will look for `.pkb` files in the [`scripts`](scripts) folder and apply heuristics to extract
+individual stored procedures or functions from the code and will try to convert them one by one using
+the flow described below.
+
 ```mermaid
 flowchart TD
     source_files[("Source files")] -->|Regular expression|routine[["FUNCTION / PROCEDURE"]]
@@ -86,6 +94,24 @@ flowchart TD
     compiles -->|yes|converted_files[("Converted files")]
     non_converted_files[("Code not converted")]
 ```
+
+Converted code will be stored in the `scripts/converted` folder, whereas non-converted stored procedures
+will be written to `scripts/non-converted` for tracking purposes.
+
+# Results
+
+Results based on real-world production code using CodeLlama Instruct 13B show the following qualitative results:
+
+* Simple (yet non-trivial) code tends to yield good translations that follow the original code's intended purpose
+  and workings.
+* Medium-complexity code typically is translated in a way that follows the original intent, but lacks specific
+  details regarding corner case handling and/or specific logical code branches.
+* Complex code that includes advanced use or cursors or very long bodies yield poorer performance, with code not
+  being converted or the converted code lacking many details from the original code 
+  (because of input/output token length limit that requires many iterations).
+
+It is yet to be seen whether bigger variants of the model (34B or 70B) or other/newer models such as Mixtral/Claude v3
+as found in Amazon Bedrock might yield better performance for these cases.
 
 # Useful resources
 
