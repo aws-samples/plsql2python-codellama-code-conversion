@@ -11,10 +11,6 @@ The code tries to handle the most common causes for error, including:
 * Incomplete code translations (by iteratively passing the converted code chunk to the FM).
 * Incorrect translated code (by making sure that the code compiles before saving it to disk or retrying, if needed).
 
-# Index
-
-[TOC]
-
 # Running the code
 
 ## Cost considerations
