@@ -15,9 +15,10 @@ The code tries to handle the most common causes for error, including:
 
 ## Cost considerations
 
-This code will launch an Amazon SageMaker endpoint in a `ml.g5.12xlarge` instance. Please review the 
+Please, consider the cost of running the Amazon SageMaker endpoint before running the code. The reference script
+[will deploy](#deploying-the-endpoint) an Amazon SageMaker endpoint in a `ml.g5.12xlarge` instance. Please review the 
 [AWS SageMaker pricing page](https://aws.amazon.com/sagemaker/pricing/?p=pm&c=sm&z=4) to understand the
-cost implications of running it.
+full cost implications before proceeding.
 
 ## Requirements
 
