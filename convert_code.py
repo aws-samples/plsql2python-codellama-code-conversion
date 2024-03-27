@@ -4,47 +4,8 @@ import re
 import logging
 from pathlib import Path
 from converters import CodeConverter
-from sagemaker.predictor import Predictor
 from converters.exceptions import ConversionError
-from converters.codellama_instruct import CodeLlamaConverter
-
-
-def convert(converter: CodeConverter, code: str, max_retries: int = 3) -> str:
-    """
-    Try to convert the given PL/SQL code into Python code
-
-    This function will try to make sure that the converted code is valid python code by
-    compiling it and retrying to convert it if it does not compile.
-
-    Parameters
-    ----------
-    converter: Converter to use for converting the code.
-    code: String with the input source code.
-    max_retries: Maximum number of retries for the generated code to compile.
-
-    Returns
-    -------
-    The converted Python code.
-    """
-    routine_name = code.split("\n")[0]
-    logging.info(f'\t\tConverting {routine_name}')
-    # We'll try to convert the code
-    for i in range(max_retries):
-        try:
-            converted = converter.convert(code, max_conversion_chunks=max_retries)
-        except ConversionError as e:
-            logging.warning(f'\t\t\tFailed to convert the code, retrying ({e})')
-            continue
-
-        # If the FM output is not complete, iterate to complete it
-        try:
-            compile(converted, filename='<string>', mode='exec')
-            return converted
-        except BaseException as e:
-            logging.warning(f'\t\t\tFailed to compile the converted code, retrying ({e}')
-
-    logging.error(f'\t\tCould not convert {routine_name} after {max_retries} retries, skipping')
-    raise ConversionError()
+from converters import ClaudeConverter, CodeLlamaConverter
 
 
 def convert_file(converter: CodeConverter, source_file: Path, output_file: Path, errors_file: Path) -> None:
@@ -73,7 +34,9 @@ def convert_file(converter: CodeConverter, source_file: Path, output_file: Path,
             routine_code = ''.join(match)
             logging.debug(f'Converting code: {routine_code}')
             try:
-                converted = convert(converter, routine_code)
+                routine_name = routine_code.split("\n")[0]
+                logging.info(f'\t\tConverting {routine_name}')
+                converted = converter.convert(routine_code)
             except ConversionError:
                 errors.write(routine_code + '\n\n')
                 errors.flush()
@@ -106,7 +69,7 @@ if __name__ == '__main__':
     errors_dir.mkdir(exist_ok=True, parents=True)
 
     # Create the converter, translate the code
-    converter = CodeLlamaConverter(args.endpoint_name)
+    converter = ClaudeConverter()
     for file in sorted(source_dir.glob('*.pkb')):
         convert_file(converter, file,
                      output_dir / file.with_suffix('.py').name,

@@ -1,6 +1,5 @@
 import re
-import logging
-from . import CodeConverter
+from .base import CodeConverter
 from sagemaker.predictor import Predictor
 from .exceptions import InputTooLongException
 from sagemaker.serializers import JSONSerializer
