@@ -101,7 +101,7 @@ Make sure to handle database operations, such as queries and updates, by calling
         It might not be complete if the FM ran out of output tokens.
         """
         # Extract the text response from the model
-        model_output = response[0]['generated_text']
+        model_output = response['content'][0]['text']
         # We expect start and optionally finish triple quotes
         matches = re.findall('^(```python|```)((.[^`])+)(^```|$)?',
                              model_output,
@@ -109,7 +109,7 @@ Make sure to handle database operations, such as queries and updates, by calling
         match len(matches):
             case 0:
                 if model_output.strip().startswith('def '):
-                    return model_output, (response[0]['details']['finish_reason'] == 'eos_token')
+                    return model_output, (response['stop_reason'] == 'end_turn')
             case 1:
                 return matches[0][1].strip(), len(matches[0][3]) == 3
 
