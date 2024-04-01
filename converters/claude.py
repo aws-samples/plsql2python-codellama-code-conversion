@@ -2,7 +2,6 @@ import re
 import json
 import boto3
 from .base import CodeConverter
-from .exceptions import InputTooLongException
 from converters.exceptions import ConversionError
 
 
@@ -50,6 +49,13 @@ Make sure to handle database operations, such as queries and updates, by calling
         """
         self.model_id = model_id
         self.client = boto3.client(service_name='bedrock-runtime')
+
+    @property
+    def fm_name(self) -> str:
+        """
+        Return the model name
+        """
+        return self.model_id
 
     def _construct_payload(self, original_code: str, max_new_tokens: int, converted_code: str = '') -> dict:
         """
@@ -103,7 +109,7 @@ Make sure to handle database operations, such as queries and updates, by calling
         # Extract the text response from the model
         model_output = response['content'][0]['text']
         # We expect start and optionally finish triple quotes
-        matches = re.findall('^(```python|```)((.[^`])+)(^```|$)?',
+        matches = re.findall('^```(?:python)\n([\s\S]*?)(?:```)$',
                              model_output,
                              flags=re.MULTILINE | re.DOTALL | re.IGNORECASE)
         match len(matches):
@@ -111,6 +117,6 @@ Make sure to handle database operations, such as queries and updates, by calling
                 if model_output.strip().startswith('def '):
                     return model_output, (response['stop_reason'] == 'end_turn')
             case 1:
-                return matches[0][1].strip(), len(matches[0][3]) == 3
+                return matches[0].strip(), (response['stop_reason'] == 'end_turn')
 
         raise ConversionError('Could not extract code from the given text')

@@ -42,6 +42,13 @@ class CodeLlamaConverter(CodeConverter):
 
         return payload
 
+    @property
+    def fm_name(self) -> str:
+        """
+        Return the endpoint name
+        """
+        return self.predictor.endpoint_name
+
     def _fm_eval(self, payload: dict):
         """
         Eval the given payload with the underlyinf Foundation Model

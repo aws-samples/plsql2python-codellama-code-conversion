@@ -71,9 +71,17 @@ class CodeConverter:
                 return code_fragment
             except BaseException as e:
                 logging.warning(f'\t\t\tFailed to compile the converted code, retrying ({e})')
+                logging.debug(code_fragment)
                 continue
 
         raise ConversionError('Could not convert the code, failing')
+
+    @property
+    def fm_name(self) -> str:
+        """
+        Returns a brief string representing the model
+        """
+        raise NotImplementedError('This method must be implemented by derived classes')
 
     def _construct_payload(self, original_code: str, max_new_tokens: int, converted_code: str = '') -> dict:
         """
