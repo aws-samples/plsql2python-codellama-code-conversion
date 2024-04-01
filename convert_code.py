@@ -38,6 +38,7 @@ def convert_file(converter: CodeConverter, source_file: Path, output_file: Path,
                 logging.info(f'\t\tConverting {routine_name}')
                 converted = converter.convert(routine_code)
             except ConversionError:
+                logging.info(f'\t\tFailed to convert procedure, failing...')
                 errors.write(routine_code + '\n\n')
                 errors.flush()
                 continue
@@ -52,6 +53,11 @@ if __name__ == '__main__':
 
     # Define the command line arguments
     parser = argparse.ArgumentParser()
+    parser.add_argument('-s', '--sources_dir',
+                        help='Path to the directory containing the source files to be translated',
+                        type=Path, default='scripts')
+    parser.add_argument('-d', '--debug',
+                        action='store_true', help='Enable debugging')
     subparsers = parser.add_subparsers(dest='command')
     subparsers.required = True
     bedrock = subparsers.add_parser('bedrock', help='Convert the code with Amazon Bedrock')
@@ -64,9 +70,6 @@ if __name__ == '__main__':
     sagemaker.add_argument('-e', '--endpoint-name',
                            help='Name of the CodeLlama-Instruct backed SageMaker Endpoint to use for querying',
                            default='codellama-13b')
-    parser.add_argument('-d', '--debug',
-                        action='store_true',
-                        help='Enable debugging')
     args = parser.parse_args()
 
     # Set the default logging configuration
@@ -86,15 +89,16 @@ if __name__ == '__main__':
             raise RuntimeError('You should not be here...')
 
     # Loop through the files in the data directory, process them separately
-    source_dir = Path('scripts')
-    output_dir = Path('scripts') / 'converted' / converter.fm_name
+    if not args.sources_dir.is_dir():
+        raise ValueError(f'Could not find the given directory {args.sources_dir}')
+    output_dir = args.sources_dir / 'converted' / converter.fm_name
     output_dir.mkdir(exist_ok=True, parents=True)
-    errors_dir = Path('scripts') / 'non-converted' / converter.fm_name
+    errors_dir = args.sources_dir / 'non-converted' / converter.fm_name
     errors_dir.mkdir(exist_ok=True, parents=True)
 
     logging.info(f'Using {args.command} - {converter.fm_name} to convert the code')
 
-    for file in sorted(source_dir.glob('*.pkb')):
+    for file in sorted(args.sources_dir.glob('*.pkb')):
         convert_file(converter, file,
                      output_dir / file.with_suffix('.py').name,
                      errors_dir / file.name)

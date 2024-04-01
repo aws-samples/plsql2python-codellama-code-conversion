@@ -1,8 +1,9 @@
 import re
 import json
 import boto3
+import botocore
 from .base import CodeConverter
-from converters.exceptions import ConversionError
+from converters.exceptions import BackendTimeoutError, ConversionError
 
 
 class ClaudeConverter(CodeConverter):
@@ -70,7 +71,8 @@ Make sure to handle database operations, such as queries and updates, by calling
         return {'anthropic_version': 'bedrock-2023-05-31',
                 'max_tokens': max_new_tokens,
                 'system': self.SYSTEM_PROMPT,
-                'messages': messages}
+                'messages': messages,
+                'temperature': 0.3}
 
     def _fm_eval(self, payload: dict):
         """
@@ -80,7 +82,10 @@ Make sure to handle database operations, such as queries and updates, by calling
         -------
         Model output, which will include free-form text and should also include a code block.
         """
-        response = self.client.invoke_model(body=json.dumps(payload), modelId=self.model_id)
+        try:
+            response = self.client.invoke_model(body=json.dumps(payload), modelId=self.model_id)
+        except botocore.exceptions.ReadTimeoutError as e:
+            raise BackendTimeoutError(f'{e}')
         return json.loads(response.get('body').read())
 
     def _extract_code(self, response: dict) -> (str, bool):
@@ -107,14 +112,16 @@ Make sure to handle database operations, such as queries and updates, by calling
         It might not be complete if the FM ran out of output tokens.
         """
         # Extract the text response from the model
-        model_output = response['content'][0]['text']
+        model_output = response['content'][0]['text'].strip()
         # We expect start and optionally finish triple quotes
         matches = re.findall('^```(?:python)\n([\s\S]*?)(?:```)$',
                              model_output,
                              flags=re.MULTILINE | re.DOTALL | re.IGNORECASE)
         match len(matches):
             case 0:
-                if model_output.strip().startswith('def '):
+                if model_output.startswith('def '):
+                    return model_output, (response['stop_reason'] == 'end_turn')
+                elif model_output.startswith('import '):
                     return model_output, (response['stop_reason'] == 'end_turn')
             case 1:
                 return matches[0].strip(), (response['stop_reason'] == 'end_turn')

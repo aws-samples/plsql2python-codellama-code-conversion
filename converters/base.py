@@ -1,5 +1,5 @@
 import logging
-from converters.exceptions import ConversionError, InputTooLongException
+from converters.exceptions import BackendTimeoutError, ConversionError, InputTooLongException
 
 
 class CodeConverter:
@@ -51,12 +51,20 @@ class CodeConverter:
                         payload = self._construct_payload(original_code,
                                                           max_new_tokens=max_new_tokens,
                                                           converted_code=code_fragment)
-                        logging.warning(
-                            '\t\t\tError calling the model, retrying with a smaller number of output tokens')
-                        j += 1
+                        logging.warning('\t\t\tError calling the model, retrying with a '
+                                        'smaller number of output tokens')
+                    except BackendTimeoutError as e:
+                        logging.warning('Timed out while querying the backend, continuing')
+                    except ConversionError:
+                        ...
+                    except BaseException as e:
+                        print(f'{e}')
+
+                    j += 1
+                    if not complete:
+                        logging.info('\t\t\tModel output not complete, iterating...')
 
                 if j >= max_retries - 1:
-                    print(j)
                     raise ConversionError(f'Could not construct the full code fragment after {max_retries} retries')
 
                 i += 1
