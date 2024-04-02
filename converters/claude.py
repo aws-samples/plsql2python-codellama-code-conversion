@@ -83,7 +83,7 @@ Make sure to handle database operations, such as queries and updates, by calling
         """
         try:
             response = self.client.invoke_model(body=json.dumps(payload), modelId=self.model_id)
-        except botocore.exceptions.ReadTimeoutError as e:
+        except (botocore.exceptions.ReadTimeoutError, self.client.exceptions.ModelTimeoutException) as e:
             raise BackendTimeoutError(f'{e}')
         return json.loads(response.get('body').read())
 
