@@ -67,11 +67,12 @@ class CodeLlamaConverter(CodeConverter):
                 case 424:
                     raise ConversionError('There was a CUDA error when attempting the code translation')
                 case 0:
+                    # This is actually a timeout, but we'll handle this as the input being too long
                     raise InputTooLongException('The input exceeds the max length for the input')
                 case _:
                     raise ConversionError('Unknown error, failing ({e})')
 
-    def _extract_code(self, response: dict) -> (str, bool):
+    def _extract_code(self, response: dict, payload: dict) -> (str, bool):
         """
         Extract the converted code from the FM response.
 
@@ -95,7 +96,6 @@ class CodeLlamaConverter(CodeConverter):
         It might not be complete if the FM ran out of output tokens.
         """
         # Extract the text response from the model
-
         model_output = response[0]['generated_text']
         # We expect start and optionally finish triple quotes
         matches = re.findall('^(```python|```)((.[^`])+)(^```|$)?',

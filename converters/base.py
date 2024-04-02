@@ -39,11 +39,16 @@ class CodeConverter:
                                                   max_new_tokens=max_new_tokens,
                                                   converted_code=code_fragment)
 
+                # The following block iterates on each individual code block, retrying runtime errors
+                # it will not iterate on code blocks that are not complete and need further calls
+                # to the FM for completion
                 j = 0
                 while j < max_retries:
                     try:
                         response = self._fm_eval(payload)
-                        code_fragment, complete = self._extract_code(response)
+                        code_fragment, complete = self._extract_code(response, payload)
+                        if not complete:
+                            logging.info('\t\t\tModel output not complete, iterating...')
                         break
                     except InputTooLongException as e:
                         # This error code means that the context + output is too long for the model to handle -> fail
@@ -55,21 +60,17 @@ class CodeConverter:
                                         'smaller number of output tokens')
                     except BackendTimeoutError as e:
                         logging.warning('Timed out while querying the backend, continuing')
-                    except ConversionError:
-                        ...
-                    except BaseException as e:
-                        print(f'{e}')
+                    except ConversionError as e:
+                        logging.exception(e)
 
                     j += 1
-                    if not complete:
-                        logging.info('\t\t\tModel output not complete, iterating...')
 
-                if j >= max_retries - 1:
-                    raise ConversionError(f'Could not construct the full code fragment after {max_retries} retries')
+                if j > max_retries - 1:
+                    raise ConversionError(f'Could not construct the full code fragment after {j} retries')
 
                 i += 1
 
-            if i >= max_conversion_chunks - 1:
+            if i > max_conversion_chunks - 1:
                 logging.warning(f'\t\t\tCould not convert the code after {max_conversion_chunks} completions, quitting')
                 continue
 
@@ -117,13 +118,14 @@ class CodeConverter:
         """
         raise NotImplementedError('This method must be implemented by derived classes')
 
-    def _extract_code(self, response: dict) -> (str, bool):
+    def _extract_code(self, response: dict, payload: dict) -> (str, bool):
         """
         Extract the converted code from the FM response.
 
         Parameters
         ----------
         response : The response from the FM
+        payload : The payload sent to the FM that originated the response
 
         Returns
         -------

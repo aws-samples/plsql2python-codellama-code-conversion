@@ -62,11 +62,10 @@ Make sure to handle database operations, such as queries and updates, by calling
         """
         Construct the payload to be passed to the endpoint
         """
+        # Force the output style to start with code, optionally filling in preexisting code
         messages = [{'role': 'user',
-                     'content': self.PROMPT_TEMPLATE.format(PLSQL_CODE=original_code)}]
-        if len(converted_code) > 0:
-            messages.append({'role': 'assistant',
-                             'content': f'<python_function>{converted_code}'})
+                     'content': self.PROMPT_TEMPLATE.format(PLSQL_CODE=original_code)},
+                    {'role': 'assistant', 'content': f'```python\n{converted_code}'.strip()}]
 
         return {'anthropic_version': 'bedrock-2023-05-31',
                 'max_tokens': max_new_tokens,
@@ -88,7 +87,7 @@ Make sure to handle database operations, such as queries and updates, by calling
             raise BackendTimeoutError(f'{e}')
         return json.loads(response.get('body').read())
 
-    def _extract_code(self, response: dict) -> (str, bool):
+    def _extract_code(self, response: dict, payload: dict) -> (str, bool):
         """
         Extract the converted code from the FM response.
 
@@ -112,18 +111,22 @@ Make sure to handle database operations, such as queries and updates, by calling
         It might not be complete if the FM ran out of output tokens.
         """
         # Extract the text response from the model
-        model_output = response['content'][0]['text'].strip()
+        model_output = response['content'][0]['text']
+        complete = (response['stop_reason'] == 'end_turn')
+        # Append the generated code block to the pre-existing one if iterating on the code blocks
+        if payload['messages'][-1]['role'] == 'assistant':
+            model_output = payload['messages'][-1]['content'] + model_output
         # We expect start and optionally finish triple quotes
-        matches = re.findall('^```(?:python)\n([\s\S]*?)(?:```)$',
+        matches = re.findall(r'```python\n([\s\S]*?)(?:```|\Z)',
                              model_output,
                              flags=re.MULTILINE | re.DOTALL | re.IGNORECASE)
         match len(matches):
             case 0:
                 if model_output.startswith('def '):
-                    return model_output, (response['stop_reason'] == 'end_turn')
+                    return model_output, complete
                 elif model_output.startswith('import '):
-                    return model_output, (response['stop_reason'] == 'end_turn')
+                    return model_output, complete
             case 1:
-                return matches[0].strip(), (response['stop_reason'] == 'end_turn')
+                return matches[0].strip(), complete
 
         raise ConversionError('Could not extract code from the given text')
