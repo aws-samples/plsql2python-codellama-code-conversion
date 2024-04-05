@@ -47,6 +47,7 @@ class CodeConverter:
                     try:
                         response = self._fm_eval(payload)
                         code_fragment, complete = self._extract_code(response, payload)
+                        logging.debug(f'Extracted code:\n{code_fragment}')
                         if not complete:
                             logging.info('\t\t\tModel output not complete, iterating...')
                         break
@@ -71,7 +72,8 @@ class CodeConverter:
                 i += 1
 
             if i > max_conversion_chunks - 1:
-                logging.warning(f'\t\t\tCould not convert the code after {max_conversion_chunks} completions, quitting')
+                logging.warning(f'\t\t\tCould not convert the code after {max_conversion_chunks} '
+                                f'completions, retrying the whole code conversion')
                 continue
 
             # We have a chunk of code, let's try to see if it's syntactically correct

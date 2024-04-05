@@ -122,11 +122,16 @@ Make sure to handle database operations, such as queries and updates, by calling
                              flags=re.MULTILINE | re.DOTALL | re.IGNORECASE)
         match len(matches):
             case 0:
+                # No matches found? -> We probably got a code-only response
                 if model_output.startswith('def '):
                     return model_output, complete
                 elif model_output.startswith('import '):
                     return model_output, complete
             case 1:
+                # We found a code block -> extract it
                 return matches[0].strip(), complete
+            case _:
+                # More than 1 code blocks
+                raise ConversionError(f'Got {len(matches)} code blocks, which is unsupported')
 
         raise ConversionError('Could not extract code from the given text')

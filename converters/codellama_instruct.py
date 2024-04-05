@@ -8,16 +8,36 @@ from sagemaker.deserializers import JSONDeserializer
 
 
 class CodeLlamaConverter(CodeConverter):
-    PROMPT_TEMPLATE = ("<s>[INST] <<SYS>>\n"
-                       "You are an expert programmer that helps migrate PL/SQL logic into python "
-                       "code, provide the answers in Python.\n"
-                       "<</SYS>>\n"
-                       "\n"
-                       "Convert the following PL/SQL code assuming that the database connection "
-                       "is passed as a parameter to the translated function, also assume that all "
-                       "the called procedures have converted python functions, so DO NOT call "
-                       "stored procedures directly in the code and instead call their equivalent "
-                       "python functions:\n")
+    PROMPT_TEMPLATE = ('<s>[INST] <<SYS>>\n'
+                       'You are a profficient Oracle DBA and python programmer working on '
+                       'upgrading database logic from PL/SQL to external python code.\n'
+                       'Your task is to convert the given PL/SQL code to an equivalent '
+                       'Python function, with the following requirements:\n\n'
+                       '1. The database connection will be passed as a parameter to the translated Python function.\n'
+                       '2. Any called stored procedures should be replaced with calls to their equivalent Python '
+                       'functions (assume these Python functions already exist).\n'
+                       '<</SYS>>\n'
+                       '\n'
+                       '''To convert the code, follow these steps:
+
+1. Define a Python function with the same name as the PL/SQL code block.
+2. Add a parameter to accept the database connection object.
+3. Translate the PL/SQL code line-by-line to Python, making the following changes:
+    - Replace PL/SQL variable declarations with Python variable assignments
+    - Convert PL/SQL control structures (loops, conditionals) to their Python equivalents
+    - Replace calls to stored procedures with calls to the corresponding Python functions, passing the database connection as a parameter
+4. Return any values that the original PL/SQL code would have returned
+
+Your converted Python code should have the following structure:
+
+```python
+def function_name(db_conn, ...):
+    # Converted Python code goes here
+    ...
+    return ...
+```
+
+Make sure to handle database operations, such as queries and updates, by calling appropriate methods on the db_conn object instead of executing SQL directly.\n''')
     MAX_NEW_TOKENS = 1024
 
     def __init__(self, sagemaker_endpoint: str):
@@ -38,7 +58,7 @@ class CodeLlamaConverter(CodeConverter):
         payload = {"inputs": self.PROMPT_TEMPLATE,
                    "parameters": {"max_new_tokens": max_new_tokens, "top_p": 0.9, "temperature": 0.2,
                                   "decoder_input_details": False, "details": True}}
-        payload['inputs'] += f'{original_code}[/INST]{converted_code}'
+        payload['inputs'] += f'{original_code}[/INST]\n```python\n{converted_code}'.strip()
 
         return payload
 
@@ -96,16 +116,15 @@ class CodeLlamaConverter(CodeConverter):
         It might not be complete if the FM ran out of output tokens.
         """
         # Extract the text response from the model
-        model_output = response[0]['generated_text']
+        model_output = (payload['inputs'] + response[0]['generated_text']).strip()
+        complete = (response[0]['details']['finish_reason'] == 'eos_token')
         # We expect start and optionally finish triple quotes
-        matches = re.findall('^(```python|```)((.[^`])+)(^```|$)?',
+        matches = re.findall(r'```python\n([\s\S]*?)(?:```|\Z)',
                              model_output,
                              flags=re.MULTILINE | re.DOTALL | re.IGNORECASE)
         match len(matches):
-            case 0:
-                if model_output.strip().startswith('def '):
-                    return model_output, (response[0]['details']['finish_reason'] == 'eos_token')
-            case 1:
-                return matches[0][1].strip(), len(matches[0][3]) == 3
+            case 2:
+                # We found a code block -> extract it
+                return matches[1].strip(), complete
 
         raise ConversionError('Could not extract code from the given text')

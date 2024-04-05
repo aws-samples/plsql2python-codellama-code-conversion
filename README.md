@@ -32,6 +32,12 @@ The code has been tested to work in Python 3.11, you will also need:
   execution role should work fine. When running in SageMaker, the default role will be specified, otherwise 
   you must supply it to the [`deploy_endpoint.py`](deploy_endpoint.py) script as an input argument.
 
+## Code requirements
+
+The code is translated one stored procedure at a time, and those are separated using a heuristics process,
+For this heuristic code to work, make sure that the `PROCEDURE`, `FUNCTION` & `END;` instructions are placed
+at the start of the line, with no added spaces before them.
+
 ## Running the code
 
 In order to convert the code, you will need a SageMaker endpoint with CodeLlama Instruct already deployed.
