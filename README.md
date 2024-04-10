@@ -178,6 +178,45 @@ def GET_ARTIST_BY_ALBUM(db_conn, p_album_title):
             print("No artist found for the given album title.")
 ```
 
+Also, Sonnet seems to exhibit a deeper knowledge of Oracle PL/SQL error codes. Think of the following pseudo-code
+representing a situation found with some internal code:
+
+```oraclesqlplus
+CREATE PROCEDURE TEST
+IS
+BEGIN
+INSERT INTO TABLE (COLUMNS) VALUES (ACTUAL_VALUES);
+EXCEPTION
+  WHEN DUP_VAL_ON_INDEX
+  THEN
+     DO_SOME_THINGS();
+  WHEN OTHERS
+  THEN
+     LOG_ERROR();
+End;
+```
+
+While Haiku & CodeLlama Instruct 13B will handle all `IntegrityError`s, Sonnet is actually handling the 
+[`ORA-00001`](https://docs.oracle.com/en/error-help/db/ora-00001/) message separately from the rest of
+errors one might get:
+
+```python
+def test(db_conn):
+    try:
+        cursor = db_conn.cursor()
+        sql = """
+            INSERT INTO TABLE (COLUMNS)
+            VALUES (:1)
+        """
+        cursor.execute(sql, actual_values)
+        db_conn.commit()
+    except cx_Oracle.IntegrityError as e:
+        if e.args[0].code == 1:  # DUP_VAL_ON_INDEX
+            do_some_things()
+        else:
+            log_error()
+```
+
 ## PCK_CHINOOK_REPORTS
 
 [`pck_chinook_reports.pkb`](scripts/pck_chinook_reports.pkb) contains some sample PL/SQL stored procedures that have
