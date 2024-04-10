@@ -1,8 +1,10 @@
 # Introduction
 
-This repo contains a sample of using an Amazon SageMaker Endpoint running
-[CodeLlama Instruct](https://aws.amazon.com/blogs/machine-learning/code-llama-code-generation-models-from-meta-are-now-available-via-amazon-sagemaker-jumpstart/)
-to convert PL/SQL code to Python.
+This repo contains a sample of using a FM for converting PL/SQL code to Python. The code is prepared to work with
+Amazon Claude v3 in Amazon Bedrock (any of its variants) and an Amazon SageMaker Endpoint running
+[CodeLlama Instruct](https://aws.amazon.com/blogs/machine-learning/code-llama-code-generation-models-from-meta-are-now-available-via-amazon-sagemaker-jumpstart/) (
+sample deployment script can be found in
+[`deploy_codellama_endpoint.py`](deploy_codellama_endpoint.py)).
 
 The code tries to handle the most common causes for error, including:
 
@@ -11,63 +13,78 @@ The code tries to handle the most common causes for error, including:
 * Incomplete code translations (by iteratively passing the converted code chunk to the FM).
 * Incorrect translated code (by making sure that the code compiles before saving it to disk or retrying, if needed).
 
+More details on the process used for conversion can be found [below](#execution-flow).
+
 # Running the code
 
 ## Cost considerations
 
-Please, consider the cost of running the Amazon SageMaker endpoint before running the code. The reference script
-[will deploy](#deploying-the-endpoint) an Amazon SageMaker endpoint in a `ml.g5.12xlarge` instance. Please review the 
-[AWS SageMaker pricing page](https://aws.amazon.com/sagemaker/pricing/?p=pm&c=sm&z=4) to understand the
-full cost implications before proceeding.
+Please, consider the cost of running the example in your code. Amazon Bedrock pricing is detailed
+[here](https://aws.amazon.com/bedrock/pricing/) and in case you want to use the Amazon SageMaker endpoint,
+consider that the reference script [will deploy](#deploying-the-endpoint) an Amazon SageMaker endpoint in a
+`ml.g5.12xlarge` instance. Please review
+the [AWS SageMaker pricing page](https://aws.amazon.com/sagemaker/pricing/?p=pm&c=sm&z=4) to understand the full cost
+implications before proceeding.
 
 ## Requirements
 
 The code has been tested to work in Python 3.11, you will also need:
 
 * The requirements in [`requirements.txt`](requirements.txt)
-* A SageMaker endpoint running CodeLlama Instruct or, optionally, AWS quota to launch a `ml.g5.12xlarge` 
-  instance as a SageMaker inference endpoint (configurable 
-  [here](https://eu-west-1.console.aws.amazon.com/servicequotas/home/services/sagemaker/quotas/L-65C4BD00)).
-* An AWS role with permission to create and invoke to SageMaker endpoints. Typically, SageMaker's default 
-  execution role should work fine. When running in SageMaker, the default role will be specified, otherwise 
-  you must supply it to the [`deploy_endpoint.py`](deploy_endpoint.py) script as an input argument.
+* If using CodeLlama Instruct for the code conversion:
+    - A SageMaker endpoint running the FM or AWS quota to launch a `ml.g5.12xlarge` instance as a SageMaker inference
+      endpoint.
+    - An AWS role with permission to create and invoke to SageMaker endpoints. Typically, SageMaker's default
+      execution role should work fine. When running in SageMaker, the default role will be specified, otherwise
+      you must supply it to the [`deploy_endpoint.py`](deploy_endpoint.py) script as an input argument.
 
-## Running the code
+### Deploying the SageMaker endpoint
 
-In order to convert the code, you will need a SageMaker endpoint with CodeLlama Instruct already deployed.
-Sample code that deploys CodeLlama Instruct 13B is provided for convenience in 
-[`deploy_endpoint.py`](deploy_endpoint.py). You can find deployment instructions below.
-
-### Deploying the endpoint
-
-If you run the script in SageMaker, it should be able to deploy the endpoint correctly, otherwise you can 
-pass the role name in the command line.
+You can use [`deploy_codellama_endpoint.py`](deploy_codellama_endpoint.py) to deploy CodeLlama Instruct 13B
+with default options (check the script for details). If you run the script in SageMaker, it should be able
+to deploy the endpoint correctly, otherwise you can pass the role name in the command line.
 
 ```bash
 # Deploy the endpoint using the default execution role
 python deploy_endpoint.py
 # Alternatively pass the desired role name in the command line, adapt to your
 # default SageMaker execution role name
-python deploy_endpoint.py --role-name=[AmazonSageMaker-ExecutionRole-YYYYMMDDTHHMMSS]
+python deploy_endpoint.py --role-name=[AmazonSageMaker-ExecutionRole-YYYYMMDDTHHMMSS] --accept-license
 ```
 
 If everything is successful, you should see some example responses from the model after a few minutes.
 
-### Executing the code conversion
+## Code requirements
 
-Once you've deployed the endpoint, you can execute the code conversion script as follows:
+The code is translated one stored procedure at a time, and those are separated using a heuristics process,
+For this heuristic code to work, make sure that the `PROCEDURE`, `FUNCTION` & `END;` instructions are placed
+at the start of the line, with no added spaces before them.
+
+## Executing the code conversion
+
+Once you've deployed the endpoint, you can execute the code conversion script. Here are some examples:
 
 ```bash
-python convert_code.py
+# Convert the code in the `scripts` folder using Claude v3 Haiku in Amazon Bedrock
+python convert_code.py bedrock --model_id=anthropic.claude-3-haiku-20240307-v1:0
+# Convert the code in the `scripts` folder using Claude v3 Sonnet in Amazon Bedrock
+python convert_code.py bedrock --model_id=anthropic.claude-3-sonnet-20240229-v1:0
+# Convert the code in the `scripts` folder with a SageMaker endpoint provided its name
+python convert_code.py sagemaker --endpoint=codellama-13b
+# Convert the code in a user-specified folder using Claude v3 Haiku in Amazon Bedrock
+python convert_code.py --sources_dir=[PATH_TO_YOUR_SOURCES_DIR] bedrock --model_id=anthropic.claude-3-haiku-20240307-v1:0
+# Convert the code in a user-specified folder using Claude v3 Sonnet in Amazon Bedrock
+python convert_code.py --sources_dir=[PATH_TO_YOUR_SOURCES_DIR] bedrock --model_id=anthropic.claude-3-sonnet-20240229-v1:0
+# Convert the code in a user-specified folder with a SageMaker endpoint provided its name
+python convert_code.py --sources_dir=[PATH_TO_YOUR_SOURCES_DIR] sagemaker --endpoint=codellama-13b
 ```
 
-This should start a somewhat lengthy process that will write the converted code to a `converted`
-folder and the non-converted stored procedures to a `non-converted` folder in the current working 
-directory.
+This should start a somewhat lengthy process that will write the converted code to a `converted/[MODEL_ID]`
+folder and the non-converted stored procedures to a `non-converted/[MODEL_ID]` folder inside the scripts folder.
 
 ## Errors
 
-* If you get an `ValidationException` error when calling the `CreateModel` operation 
+* If you get an `ValidationException` error when calling the `CreateModel` operation
   (`botocore.exceptions.ClientError: An error occurred (ValidationException) when calling the CreateModel operation: The execution role ARN "arn:aws:iam::012345678901:role/Admin" is invalid. Please ensure that the role exists and that its trust relationship policy allows the action "sts:AssumeRole" for the service principal "sagemaker.amazonaws.com".`)
   please make sure that you execute the code inside SageMaker or to provide the name of the default SageMaker
   execution role in the command line, as the code is probably using the default CLI role.
@@ -79,7 +96,8 @@ strategies mentiones in the [introduction](#introduction).
 
 The code will look for `.pkb` files in the [`scripts`](scripts) folder and apply heuristics to extract
 individual stored procedures or functions from the code and will try to convert them one by one using
-the flow described below.
+the flow described below. Also, the whole process will be retried up to three times per stored procedure
+in case of error (this is not depicted in the diagram below for clarity).
 
 ```mermaid
 flowchart TD
@@ -87,8 +105,8 @@ flowchart TD
     routine --> FM
     FM["CodeLlama 13B"] --> fm_output["FM output"]
     fm_output --> fm_output_complete{"Complete?"}
-    fm_output_complete -->|no, i≤3|FM
-    fm_output_complete -->|no, i>3|non_converted_files
+    fm_output_complete -->|no, i≤4|FM
+    fm_output_complete -->|no, i>4|non_converted_files
     fm_output_complete -->|yes|compiles{"Compiles?"}
     compiles -->|no, j≤3|FM
     compiles -->|no, j>3|non_converted_files
@@ -96,115 +114,90 @@ flowchart TD
     non_converted_files[("Code not converted")]
 ```
 
-Converted code will be stored in the `scripts/converted` folder, whereas non-converted stored procedures
-will be written to `scripts/non-converted` for tracking purposes.
+Converted code will be stored in the `scripts/[MODEL_ID]/converted` folder, whereas non-converted stored procedures
+will be written to `scripts/[MODEL_ID]/non-converted` for tracking purposes.
 
 # Results
 
-Results based on real-world production code using CodeLlama Instruct 13B show the following qualitative results:
+The conversion code has been tested with the examples in [`scripts`](scripts) and with internal code. As a general rule:
 
+* Claude models on Bedrock tend to operate better on very long code, being able to produce longer chunks
+  before needing to iterate with more code chunk.
 * Simple (yet non-trivial) code tends to yield good translations that follow the original code's intended purpose
-  and workings.
+  and inner working.
 * Medium-complexity code typically is translated in a way that follows the original intent, but lacks specific
   details regarding corner case handling and/or specific logical code branches.
 * Complex code that includes advanced use or cursors or very long bodies yield poorer performance, with code not
-  being converted or the converted code lacking many details from the original code 
-  (because of input/output token length limit that requires many iterations).
+  being converted or the converted code lacking many details from the original code. Bigger Claude 3 variants
+  appear to perform better for these cases, but manual review/conversion is required.
 
-It is yet to be seen whether bigger variants of the model (34B or 70B) or other/newer models such as Mixtral/Claude v3
-as found in Amazon Bedrock might yield better performance for these cases.
+With that said, you'll see differences in the code style is different between the models, with some examples showing
+that CodeLlama would convert some stored procedure local variables into function parameters whereas Claude might
+correctly add them as function variables.
 
-## PCK_CHINOOK_REPORTS
-
-[`pck_chinook_reports.pkb`](scripts/pck_chinook_reports.pkb) contains some sample PL/SQL stored procedures that have
-been translated with this code and left as an example. You can check the results below.
-
-Results are presented directly as converted by the model, with only minor cosmetic changes for readability 
-(the unmodified output can be found in [`pck_chinook_reports.py`](scripts/converted/pck_chinook_reports.py)).
-
-### GET_ARTIST_BY_ALBUM
-
-PL/SQL code:
+Also, Sonnet appears to provide more correct outputs (pending testing with Opus). Consider the following block of
+code from [`pck_chinook_reports.pkb`](scripts/pck_chinook_reports.pkb):
 
 ```oraclesqlplus
 PROCEDURE GET_ARTIST_BY_ALBUM(P_ARTIST_ID ALBUM.TITLE%TYPE)
 IS
 V_ARTIST_NAME ARTIST.NAME%TYPE;
 BEGIN
-SELECT ART.NAME
-INTO V_ARTIST_NAME
-FROM ALBUM ALB
-         JOIN ARTIST ART USING (ARTISTID)
-WHERE ALB.TITLE = P_ARTIST_ID;
-DBMS_OUTPUT
-.
-PUT_LINE
-('ArtistName: '||V_ARTIST_NAME);
+    SELECT ART.NAME
+    INTO V_ARTIST_NAME
+    FROM ALBUM ALB
+             JOIN ARTIST ART USING (ARTISTID)
+    WHERE ALB.TITLE = P_ARTIST_ID;
+    DBMS_OUTPUT
+        .
+        PUT_LINE
+    ('ArtistName: ' || V_ARTIST_NAME);
 END;
 ```
 
-Converted python code:
+This procedure accepts an input parameter named `P_ARTIST_ID` which actually is the album title whose artist
+name you want to retrieve. Both CodeLlama and Claude3 Haiku will respect that, but Sonnet actually renames the
+variable so that it makes sense:
 
 ```python
-import cx_Oracle
+def GET_ARTIST_BY_ALBUM(db_conn, p_album_title):
+    with db_conn.cursor() as cursor:
+        query = """
+            SELECT ART.NAME
+            FROM ALBUM ALB
+            JOIN ARTIST ART USING (ARTISTID)
+            WHERE ALB.TITLE = :album_title
+        """
+        cursor.execute(query, album_title=p_album_title)
+        result = cursor.fetchone()
 
-def get_artist_by_album(p_artist_id, connection):
-    cursor = connection.cursor()
-    query = "SELECT ART.NAME FROM ALBUM ALB JOIN ARTIST ART USING (ARTISTID) WHERE ALB.TITLE = :p_artist_id"
-    cursor.execute(query, {"p_artist_id": p_artist_id})
-    artist_name = cursor.fetchone()[0]
-    print(f"ArtistName: {artist_name}")
+        if result:
+            v_artist_name = result[0]
+            print(f"ArtistName: {v_artist_name}")
+        else:
+            print("No artist found for the given album title.")
 ```
 
-### CUST_INVOICE_BY_YEAR_ANALYZE
+## PCK_CHINOOK_REPORTS
 
-PL/SQL code:
+[`pck_chinook_reports.pkb`](scripts/pck_chinook_reports.pkb) contains some sample PL/SQL stored procedures that have
+been translated with this code and left as an example. You can check the results for the different examples
+in the [`converted`](scripts/converted) folder, and you can test your own code by adding your own pkb files
+to the [`scripts`](scripts) folder and running the code as described [above](#executing-the-code-conversion).
 
-```oraclesqlplus
-PROCEDURE CUST_INVOICE_BY_YEAR_ANALYZE
-AS
-V_CUST_GENRES VARCHAR2(200);
-BEGIN
-FOR V IN(SELECT CUSTOMERID, CUSTNAME, LOW_YEAR, HIGH_YEAR, CUST_AVG FROM TMP_CUST_
-INVOICE_ANALYSE)
-LOOP
-IF SUBSTR(V.LOW_YEAR, -4) > SUBSTR(V.HIGH_YEAR , -4) THEN
-SELECT LISTAGG(GENRE, ',') WITHIN GROUP (ORDER BY GENRE) INTO V_CUST_GENRES FROM
-(SELECT DISTINCT
-FUNC_GENRE_BY_ID(TRC.GENREID) AS GENRE
-FROM TMP_CUST_INVOICE_ANALYSE TMPTBL JOIN INVOICE INV USING(CUSTOMERID)
-JOIN INVOICELINE INVLIN
-ON INV.INVOICEID = INVLIN.INVOICEID
-JOIN TRACK TRC
-ON TRC.TRACKID = INVLIN.TRACKID
-WHERE CUSTOMERID=V.CUSTOMERID);
-DBMS_OUTPUT.PUT_LINE('Customer: '||UPPER(V.CUSTNAME)||' - Offer a Discount According
-To Preferred Genres: '||UPPER(V_CUST_GENRES));
-END IF;
-END LOOP;
-END;
-END;
-```
+# Cleanup instructions
 
-Converted python code:
+If you deployed the SageMaker endpoint, you can remove it as follows:
 
-```python
-import cx_Oracle
-
-def cust_invoice_by_year_analyze(connection):
-    cursor = connection.cursor()
-    cursor.execute("SELECT CUSTOMERID, CUSTNAME, LOW_YEAR, HIGH_YEAR, CUST_AVG FROM TMP_CUST_INVOICE_ANALYSE")
-    rows = cursor.fetchall()
-    for row in rows:
-        if int(row[2]) > int(row[3]):
-            cursor.execute("SELECT LISTAGG(GENRE, ',') WITHIN GROUP (ORDER BY GENRE) FROM (SELECT DISTINCT FUNC_GENRE_BY_ID(TRC.GENREID) AS GENRE FROM TMP_CUST_INVOICE_ANALYSE TMPTBL JOIN INVOICE INV USING(CUSTOMERID) JOIN INVOICELINE INVLIN ON INV.INVOICEID = INVLIN.INVOICEID JOIN TRACK TRC ON TRC.TRACKID = INVLIN.TRACKID WHERE CUSTOMERID=:CUSTOMERID)", {"CUSTOMERID": row[0]})
-            genres = cursor.fetchone()[0]
-            print("Customer: " + row[1].upper() + " - Offer a Discount According To Preferred Genres: " + genres.upper())
-
+```bash
+# Replace the endpoint name if you specified a custom one
+aws sagemaker delete-endpoint --endpoint-name codellama-13b
+aws sagemaker delete-endpoint-config --endpoint-config-name codellama-13b
 ```
 
 # Useful resources
 
+* [Access to the most powerful Anthropic AI models begins today on Amazon Bedrock](https://www.aboutamazon.com/news/aws/amazon-bedrock-anthropic-ai-claude-3)
 * [CodeLlama Jumpstart availability announcement](https://aws.amazon.com/blogs/machine-learning/code-llama-code-generation-models-from-meta-are-now-available-via-amazon-sagemaker-jumpstart/)
 * [CodeLlama 70B Jumpstart availability announcement](https://aws.amazon.com/blogs/machine-learning/code-llama-70b-is-now-available-in-amazon-sagemaker-jumpstart/)
 * [CodeLlama 13B Instruct in HuggingFace](https://huggingface.co/codellama/CodeLlama-13b-Instruct-hf)
