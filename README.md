@@ -110,7 +110,7 @@ flowchart TD
     fm_output_complete -->|yes|compiles{"Compiles?"}
     compiles -->|no, j≤3|FM
     compiles -->|no, j>3|non_converted_files
-    compiles -->|yes|converted_files[("Converted files")]
+    compiles -->|yes|converted_files[("Converted code")]
     non_converted_files[("Code not converted")]
 ```
 
