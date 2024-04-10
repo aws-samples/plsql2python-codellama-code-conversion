@@ -5,7 +5,7 @@ class ConversionError(RuntimeError):
     ...
 
 
-class InputTooLongException(ConversionError):
+class OutputTooLongException(ConversionError):
     """
     Exception to be raised if the input is too long to be used by the FM
     """

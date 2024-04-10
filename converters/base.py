@@ -1,5 +1,5 @@
 import logging
-from converters.exceptions import BackendTimeoutError, ConversionError, InputTooLongException
+from converters.exceptions import BackendTimeoutError, ConversionError, OutputTooLongException
 
 
 class CodeConverter:
@@ -51,7 +51,7 @@ class CodeConverter:
                         if not complete:
                             logging.info('\t\t\tModel output not complete, iterating...')
                         break
-                    except InputTooLongException as e:
+                    except OutputTooLongException as e:
                         # This error code means that the context + output is too long for the model to handle -> fail
                         max_new_tokens = int(0.7 * max_new_tokens)
                         payload = self._construct_payload(original_code,

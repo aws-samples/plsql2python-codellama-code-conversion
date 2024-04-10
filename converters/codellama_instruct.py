@@ -1,7 +1,7 @@
 import re
 from .base import CodeConverter
 from sagemaker.predictor import Predictor
-from .exceptions import InputTooLongException
+from .exceptions import OutputTooLongException
 from sagemaker.serializers import JSONSerializer
 from converters.exceptions import ConversionError
 from sagemaker.deserializers import JSONDeserializer
@@ -87,8 +87,10 @@ Make sure to handle database operations, such as queries and updates, by calling
                 case 424:
                     raise ConversionError('There was a CUDA error when attempting the code translation')
                 case 0:
-                    # This is actually a timeout, but we'll handle this as the input being too long
-                    raise InputTooLongException('The input exceeds the max length for the input')
+                    # This is actually a timeout, but this exception will be retried with a smaller
+                    # number of output tokens requested, which sometimes allows the model to produce
+                    # a valid output before the 60s timeout of the SageMaker endpoint
+                    raise OutputTooLongException('The input exceeds the max length for the input')
                 case _:
                     raise ConversionError('Unknown error, failing ({e})')
 
