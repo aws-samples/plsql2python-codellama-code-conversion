@@ -103,7 +103,7 @@ in case of error (this is not depicted in the diagram below for clarity).
 flowchart TD
     source_files[("Source files")] -->|Regular expression|routine[["FUNCTION / PROCEDURE"]]
     routine --> FM
-    FM["CodeLlama 13B"] --> fm_output["FM output"]
+    FM["Foundation Model"] --> fm_output["FM output"]
     fm_output --> fm_output_complete{"Complete?"}
     fm_output_complete -->|no, i≤4|FM
     fm_output_complete -->|no, i>4|non_converted_files
