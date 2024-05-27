@@ -10,10 +10,10 @@ def GET_ARTIST_BY_ALBUM(db_conn, p_artist_id):
     Returns:
         str: The name of the artist.
     """
-    # Declare the variable to hold the artist name
+    # Declare variables
     v_artist_name = None
     
-    # Execute the query to retrieve the artist name
+    # Execute the query
     with db_conn.cursor() as cursor:
         query = """
         SELECT ART.NAME
@@ -42,7 +42,7 @@ def CUST_INVOICE_BY_YEAR_ANALYZE(db_conn):
         if v.LOW_YEAR[-4:] > v.HIGH_YEAR[-4:]:
             genres = ",".join(
                 [
-                    func_genre_by_id(db_conn, trc.GENREID)
+                    func_genre_by_id(trc.GENREID)
                     for trc in db_conn.execute(
                         """
                         SELECT DISTINCT FUNC_GENRE_BY_ID(TRC.GENREID) AS GENRE
@@ -55,18 +55,4 @@ def CUST_INVOICE_BY_YEAR_ANALYZE(db_conn):
                 ]
             )
             print(f"Customer: {v.CUSTNAME.upper()} - Offer a Discount According To Preferred Genres: {genres.upper()}")
-
-def func_genre_by_id(db_conn, genreid):
-    """
-    Retrieves the genre name for the given genre ID.
-    
-    Args:
-        db_conn (cx_Oracle.Connection): The database connection object.
-        genreid (int): The genre ID.
-    
-    Returns:
-        str: The genre name.
-    """
-    result = db_conn.execute("SELECT GENRE FROM GENRE WHERE GENREID = :genreid", {"genreid": genreid}).fetchone()
-    return result[0] if result else None
 

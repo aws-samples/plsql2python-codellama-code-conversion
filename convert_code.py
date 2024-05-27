@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from converters import CodeConverter
 from converters.exceptions import ConversionError
-from converters import ClaudeConverter, CodeLlamaConverter
+from converters import BedrockLlamaConverter, ClaudeConverter, CodeLlamaConverter
 
 
 def convert_file(converter: CodeConverter, source_file: Path, output_file: Path, errors_file: Path) -> None:
@@ -65,7 +65,9 @@ if __name__ == '__main__':
                          help='Model to use with Amazon Bedrock',
                          default='anthropic.claude-3-sonnet-20240229-v1:0',
                          choices=['anthropic.claude-3-haiku-20240307-v1:0',
-                                  'anthropic.claude-3-sonnet-20240229-v1:0'])
+                                  'anthropic.claude-3-sonnet-20240229-v1:0',
+                                  'meta.llama3-8b-instruct-v1:0',
+                                  'meta.llama3-70b-instruct-v1:0'])
     sagemaker = subparsers.add_parser('sagemaker', help='Convert the code with a SageMaker endpoint')
     sagemaker.add_argument('-e', '--endpoint-name',
                            help='Name of the CodeLlama-Instruct backed SageMaker Endpoint to use for querying',
@@ -82,7 +84,10 @@ if __name__ == '__main__':
     # Create the converter, translate the code
     match args.command:
         case 'bedrock':
-            converter = ClaudeConverter(model_id=args.model_id)
+            if args.model_id.startswith('anthropic'):
+                converter = ClaudeConverter(model_id=args.model_id)
+            elif args.model_id.startswith('meta'):
+                converter = BedrockLlamaConverter(model_id=args.model_id)
         case 'sagemaker':
             converter = CodeLlamaConverter(sagemaker_endpoint=args.endpoint_name)
         case _:
