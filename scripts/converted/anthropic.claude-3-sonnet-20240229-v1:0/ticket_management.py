@@ -2,8 +2,6 @@ import cx_Oracle
 
 
 def sellTickets(db_conn, person_id, event_id, quantity=1):
-    not_enough_seats = Exception("Not enough seats")
-
     p_person_id = person_id
     p_event_id = event_id
     p_quantity = quantity
@@ -11,78 +9,67 @@ def sellTickets(db_conn, person_id, event_id, quantity=1):
     event_rec = get_event_details(db_conn, p_event_id)
 
     try:
-        with db_conn.cursor() as cursor:
-            query = """
+        cursor = db_conn.cursor()
+        query = """
+            SELECT seat_level, seat_section, seat_row
+            FROM (
                 SELECT seat_level, seat_section, seat_row
-                FROM (
-                    SELECT seat_level, seat_section, seat_row
-                    FROM sporting_event_ticket
-                    WHERE sporting_event_id = :event_id
-                    AND ticketholder_id IS NULL
-                    GROUP BY seat_level, seat_section, seat_row
-                    HAVING COUNT(*) >= :quantity
-                )
-                WHERE rownum < 2
-            """
-            cursor.execute(query, {'event_id': p_event_id, 'quantity': p_quantity})
-            r_seat_level, r_seat_section, r_seat_row = cursor.fetchone()
-
-        adjacent_seats_query = """
-            SELECT *
-            FROM sporting_event_ticket
-            WHERE sporting_event_id = :event_id
-            AND seat_level = :seat_level
-            AND seat_section = :seat_section
-            AND seat_row = :seat_row
-            ORDER BY seat_level, seat_section, seat_row
-            FOR UPDATE OF ticketholder_id
+                FROM sporting_event_ticket
+                WHERE sporting_event_id = :p_event_id
+                AND ticketholder_id IS NULL
+                GROUP BY seat_level, seat_section, seat_row
+                HAVING COUNT(*) >= :p_quantity
+            )
+            WHERE rownum < 2
         """
-
-        with db_conn.cursor() as adjacent_seats_cursor:
-            adjacent_seats_cursor.execute(adjacent_seats_query, {
-                'event_id': p_event_id,
-                'seat_level': r_seat_level,
-                'seat_section': r_seat_section,
-                'seat_row': r_seat_row
-            })
-
-            for _ in range(p_quantity):
-                cur_ticket = adjacent_seats_cursor.fetchone()
-
-                if cur_ticket is None:
-                    raise not_enough_seats
-
-                adjacent_seats_cursor.updateRow([p_person_id])
-
-                insert_purchase_query = """
-                    INSERT INTO ticket_purchase_hist (
-                        sporting_event_ticket_id,
-                        purchased_by_id,
-                        transaction_date_time,
-                        purchase_price
-                    ) VALUES (
-                        :ticket_id,
-                        :person_id,
-                        SYSDATE,
-                        :ticket_price
-                    )
-                """
-                with db_conn.cursor() as insert_cursor:
-                    insert_cursor.execute(insert_purchase_query, {
-                        'ticket_id': cur_ticket[0],
-                        'person_id': p_person_id,
-                        'ticket_price': cur_ticket[6]
-                    })
-
-            db_conn.commit()
-
-    except not_enough_seats:
+        cursor.execute(query, {'p_event_id': p_event_id, 'p_quantity': p_quantity})
+        r_seat_level, r_seat_section, r_seat_row = cursor.fetchone()
+    except cx_Oracle.DatabaseError:
         print(f"Sorry, there aren't {p_quantity} adjacent seats for event:")
         print(f"   {event_rec.home_team_name} VS {event_rec.away_team_name}   ({event_rec.sport_name})")
         print(f"   {event_rec.home_field}:  {event_rec.date_time.strftime('%d-%b-%Y %H:%M')}")
+        return
+
+    adjacent_seats_query = """
+        SELECT *
+        FROM sporting_event_ticket
+        WHERE sporting_event_id = :p_event_id
+        AND seat_level = :r_seat_level
+        AND seat_section = :r_seat_section
+        AND seat_row = :r_seat_row
+        ORDER BY seat_level, seat_section, seat_row
+        FOR UPDATE OF ticketholder_id
+    """
+
+    cursor.execute(adjacent_seats_query, {
+        'p_event_id': p_event_id,
+        'r_seat_level': r_seat_level,
+        'r_seat_section': r_seat_section,
+        'r_seat_row': r_seat_row
+    })
+
+    for _ in range(p_quantity):
+        cur_ticket = cursor.fetchone()
+        if cur_ticket is None:
+            break
+
+        cursor.execute("""
+            UPDATE sporting_event_ticket
+            SET ticketholder_id = :p_person_id
+            WHERE id = :ticket_id
+        """, {'p_person_id': p_person_id, 'ticket_id': cur_ticket[0]})
+
+        cursor.execute("""
+            INSERT INTO ticket_purchase_hist (sporting_event_ticket_id, purchased_by_id, transaction_date_time, purchase_price)
+            VALUES (:ticket_id, :p_person_id, SYSDATE, :ticket_price)
+        """, {'ticket_id': cur_ticket[0], 'p_person_id': p_person_id, 'ticket_price': cur_ticket[7]})
+
+    db_conn.commit()
+    cursor.close()
 
 def get_event_details(db_conn, event_id):
-    # Assume this function already exists and returns an EventRecType object
+    # Implement the get_event_details function here
+    # It should return an object with the required event details
     pass
 
 
@@ -93,10 +80,10 @@ def transferTicket(db_conn, ticket_id, new_ticketholder_id, transfer_all=False, 
     p_price = price
     xferall = 1 if transfer_all else 0
     old_ticketholder_id = None
-    last_txn_date = None
 
-    # Retrieve the last transaction date and old ticketholder ID
     cursor = db_conn.cursor()
+
+    # Get the last transaction date and old ticketholder ID
     query = """
         SELECT MAX(h.transaction_date_time) AS transaction_date_time,
                t.ticketholder_id AS ticketholder_id
@@ -111,18 +98,16 @@ def transferTicket(db_conn, ticket_id, new_ticketholder_id, transfer_all=False, 
     if result:
         last_txn_date, old_ticketholder_id = result
 
-    if last_txn_date and old_ticketholder_id:
-        # Retrieve the ticket purchase history for the old ticketholder
-        txfr_cur = """
-            SELECT * FROM ticket_purchase_hist
-            WHERE purchased_by_id = :old_ticketholder_id
-            AND transaction_date_time = :last_txn_date
-        """
-        cursor.execute(txfr_cur, {'old_ticketholder_id': old_ticketholder_id, 'last_txn_date': last_txn_date})
-        txfr_records = cursor.fetchall()
+    # Transfer tickets
+    txfr_cur = """
+        SELECT * FROM ticket_purchase_hist
+        WHERE purchased_by_id = :p_purchased_by
+        AND transaction_date_time = :p_txn_date_time
+    """
 
-        for xrec in txfr_records:
-            # Update the ticketholder ID for the ticket
+    if old_ticketholder_id and last_txn_date:
+        cursor.execute(txfr_cur, {'p_purchased_by': old_ticketholder_id, 'p_txn_date_time': last_txn_date})
+        for xrec in cursor:
             update_query = """
                 UPDATE sporting_event_ticket
                 SET ticketholder_id = :p_new_ticketholder_id
@@ -130,18 +115,17 @@ def transferTicket(db_conn, ticket_id, new_ticketholder_id, transfer_all=False, 
             """
             cursor.execute(update_query, {'p_new_ticketholder_id': p_new_ticketholder_id, 'ticket_id': xrec[0]})
 
-            # Insert a new record in the ticket purchase history
-            purchase_price = p_price if p_price is not None else xrec[4]
             insert_query = """
                 INSERT INTO ticket_purchase_hist (sporting_event_ticket_id, purchased_by_id, transferred_from_id, transaction_date_time, purchase_price)
                 VALUES (:ticket_id, :p_new_ticketholder_id, :old_ticketholder_id, SYSDATE, :purchase_price)
             """
+            purchase_price = p_price if p_price is not None else xrec[4]
             cursor.execute(insert_query, {'ticket_id': xrec[0], 'p_new_ticketholder_id': p_new_ticketholder_id, 'old_ticketholder_id': old_ticketholder_id, 'purchase_price': purchase_price})
 
         db_conn.commit()
     else:
         db_conn.rollback()
-        raise Exception("No ticket found or transaction history not available.")
+        raise Exception("Error transferring ticket")
 
     cursor.close()
 
@@ -154,11 +138,6 @@ def generate_ticket_activity(db_conn, transaction_delay, max_transactions=1000):
         sell_random_tickets(db_conn)
         txn_count += 1
         time.sleep(transaction_delay)
-
-def sell_random_tickets(db_conn):
-    # Implement the logic to sell random tickets
-    # using the provided database connection (db_conn)
-    pass
 
 import random
 from typing import Optional
@@ -178,7 +157,7 @@ def generate_transfer_activity(db_conn, transaction_delay: int = 5, max_transact
                 WHERE sporting_event_ticket_id <= :random_value
             """, random_value=random.randint(min_tik_id, max_tik_id)).fetchone()[0]
 
-            new_ticketholder = int(random.uniform(g_min_person_id, g_max_person_id))
+            new_ticketholder = int(random.randint(g_min_person_id, g_max_person_id))
 
             xfer_all = random.randint(1, 5) < 5  # transfer all tickets 80% of the time
 
@@ -197,7 +176,7 @@ def generate_transfer_activity(db_conn, transaction_delay: int = 5, max_transact
 
             txn_count += 1
             time.sleep(transaction_delay)
-        except NoDataFoundError:
+        except NoDataFound:
             print('No tickets available to transfer.')
             break
 
@@ -249,7 +228,7 @@ def sellRandomTickets(db_conn):
     event_idx = random.randint(0, row_ct - 1)
     event_id = event_tab[event_idx]['id']
     
-    # Select a random person and ticket quantity
+    # Select a random person and quantity
     ticket_holder = random.randint(g_min_person_id, g_max_person_id)
     quantity = random.randint(1, 6)
     

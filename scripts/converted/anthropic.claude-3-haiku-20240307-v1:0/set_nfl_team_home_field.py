@@ -1,7 +1,7 @@
 import cx_Oracle
 def set_nfl_team_home_field(db_conn):
     """
-    Sets the home field for each NFL team based on the data in the nfl_stadium_data table.
+    Set the home field for each NFL team based on the data in the nfl_stadium_data table.
     
     Args:
         db_conn (cx_Oracle.Connection): The database connection object.
@@ -11,14 +11,17 @@ def set_nfl_team_home_field(db_conn):
             SELECT sport_location_id, team 
             FROM nfl_stadium_data
         """)
-        for nrec in cursor:
-            sport_location_id, team = nrec
+        for row in cursor:
+            sport_location_id, team = row
             cursor.execute("""
                 UPDATE sport_team s
                 SET s.home_field_id = :sport_location_id
                 WHERE s.name = :team
                   AND s.sport_league_short_name = 'NFL'
                   AND s.sport_type_name = 'football'
-            """, {'sport_location_id': sport_location_id, 'team': team})
+            """, {
+                'sport_location_id': sport_location_id,
+                'team': team
+            })
         db_conn.commit()
 

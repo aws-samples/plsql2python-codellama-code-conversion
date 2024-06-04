@@ -37,34 +37,12 @@ def p_json_test(db_conn, p_in_accounts_json):
                   FROM aws_test_table scco,
                     JSON_TABLE(
                       :p_in_accounts_json, '$.accounts[*]'
-                      ERROR ON ERROR
-                      COLUMNS (
-                        parent_account_number NUMBER PATH '$.parentAccountNumber',
-                        account_number NUMBER PATH '$.accountNumber',
-                        business_unit_id NUMBER PATH '$.businessUnitId'
-                      )
-                    ) static_data
-                  INNER JOIN
-                    JSON_TABLE(
-                      json_doc, '$'
-                      ERROR ON ERROR
-                      COLUMNS (
-                        parent_account_number NUMBER PATH '$.data.account.parentAccountNumber',
-                        account_number NUMBER PATH '$.data.account.accountNumber',
-                        business_unit_id NUMBER PATH '$.data.account.businessUnitId',
-                        position_id VARCHAR2(4) PATH '$.data.positionId'
-                      )
-                    ) tab_data
-                  ON (
-                    static_data.parent_account_number = tab_data.parent_account_number
-                    AND static_data.account_number = tab_data.account_number
-                    AND static_data.business_unit_id = tab_data.business_unit_id
-                  )
+                    ) AS tab_data
                   GROUP BY
                     tab_data.business_unit_id,
                     tab_data.parent_account_number,
                     tab_data.account_number
-                )
+                  )
             """, (p_in_accounts_json,))
             p_out_accunts_json = cursor.fetchone()[0]
             return p_out_accunts_json

@@ -1,68 +1,74 @@
 import cx_Oracle
 def sellTickets(db_conn, person_id, event_id, quantity=1):
-    class not_enough_seats(Exception):
+    class NotEnoughSeatsError(Exception):
         pass
 
-    p_person_id = person_id
-    p_event_id = event_id
-    p_quantity = quantity
+    def get_event_details(event_id):
+        # Call the equivalent Python function for get_event_details
+        return get_event_details_py(db_conn, event_id)
 
-    r_seat_level = None
-    r_seat_section = None
-    r_seat_row = None
-
-    event_rec = get_event_details(db_conn, p_event_id)
+    cursor = db_conn.cursor()
 
     try:
-        with db_conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT seat_level, seat_section, seat_row
-                FROM (
-                    SELECT seat_level, seat_section, seat_row
-                    FROM sporting_event_ticket
-                    WHERE sporting_event_id = %s
-                    AND ticketholder_id IS NULL
-                    GROUP BY seat_level, seat_section, seat_row
-                    HAVING COUNT(*) >= %s
-                )
-                WHERE ROWNUM < 2
-            """, (p_event_id, p_quantity))
-            r_seat_level, r_seat_section, r_seat_row = cursor.fetchone()
-    except:
-        raise not_enough_seats
-
-    with db_conn.cursor() as cursor:
+        # Find available seats
         cursor.execute("""
-            SELECT *
-            FROM sporting_event_ticket
-            WHERE sporting_event_id = %s
-            AND seat_level = %s
-            AND seat_section = %s
-            AND seat_row = %s
-            ORDER BY seat_level, seat_section, seat_row
-            FOR UPDATE OF ticketholder_id
-        """, (p_event_id, r_seat_level, r_seat_section, r_seat_row))
-        for i in range(p_quantity):
-            cur_ticket = cursor.fetchone()
-            cursor.execute("""
-                UPDATE sporting_event_ticket
-                SET ticketholder_id = %s
-                WHERE CURRENT OF CURSOR
-            """, (p_person_id,))
-            cursor.execute("""
-                INSERT INTO ticket_purchase_hist(sporting_event_ticket_id, purchased_by_id, transaction_date_time, purchase_price)
-                VALUES(%s, %s, CURRENT_TIMESTAMP, %s)
-            """, (cur_ticket.id, p_person_id, cur_ticket.ticket_price))
-        db_conn.commit()
+            SELECT seat_level, seat_section, seat_row
+            FROM (
+                SELECT seat_level, seat_section, seat_row
+                FROM sporting_event_ticket
+                WHERE sporting_event_id = :event_id
+                AND ticketholder_id IS NULL
+                GROUP BY seat_level, seat_section, seat_row
+                HAVING COUNT(*) >= :quantity
+            )
+            WHERE ROWNUM < 2
+        """, {'event_id': event_id, 'quantity': quantity})
+        r_seat_level, r_seat_section, r_seat_row = cursor.fetchone()
+    except cx_Oracle.DatabaseError:
+        raise NotEnoughSeatsError(
+            f"Sorry, there aren't {quantity} adjacent seats for event:"
+            f"   {event_rec.home_team_name} VS {event_rec.away_team_name}   ({event_rec.sport_name})"
+            f"   {event_rec.home_field}: {event_rec.date_time.strftime('%d-%b-%Y %H:%M')}"
+        )
 
-    if r_seat_level is None or r_seat_section is None or r_seat_row is None:
-        raise not_enough_seats
+    cursor.execute("""
+        SELECT *
+        FROM sporting_event_ticket
+        WHERE sporting_event_id = :event_id
+        AND seat_level = :seat_level
+        AND seat_section = :seat_section
+        AND seat_row = :seat_row
+        ORDER BY seat_level, seat_section, seat_row
+        FOR UPDATE OF ticketholder_id
+    """, {
+        'event_id': event_id,
+        'seat_level': r_seat_level,
+        'seat_section': r_seat_section,
+        'seat_row': r_seat_row
+    })
 
-    return None
+    event_rec = get_event_details(event_id)
 
-def get_event_details(db_conn, event_id):
-    # Implement the get_event_details function here
-    pass
+    for _ in range(quantity):
+        cur_ticket = cursor.fetchone()
+        cursor.execute("""
+            UPDATE sporting_event_ticket
+            SET ticketholder_id = :person_id
+            WHERE CURRENT OF :cursor
+        """, {
+            'person_id': person_id,
+            'cursor': cursor
+        })
+        cursor.execute("""
+            INSERT INTO ticket_purchase_hist(sporting_event_ticket_id, purchased_by_id, transaction_date_time, purchase_price)
+            VALUES(:ticket_id, :person_id, SYSDATE, :ticket_price)
+        """, {
+            'ticket_id': cur_ticket.id,
+            'person_id': person_id,
+            'ticket_price': cur_ticket.ticket_price
+        })
+
+    db_conn.commit()
 
 def transferTicket(db_conn, ticket_id, new_ticketholder_id, transfer_all=False, price=None):
     p_ticket_id = ticket_id
@@ -79,7 +85,7 @@ def transferTicket(db_conn, ticket_id, new_ticketholder_id, transfer_all=False, 
             FROM ticket_purchase_hist h
             JOIN sporting_event_ticket t ON t.id = :p_ticket_id
             WHERE h.purchased_by_id = t.ticketholder_id
-              AND (h.sporting_event_ticket_id = :p_ticket_id OR :xferall = 1)
+            AND ((h.sporting_event_ticket_id = :p_ticket_id) OR (:xferall = 1))
             GROUP BY t.ticketholder_id
         """, {'p_ticket_id': p_ticket_id, 'xferall': xferall})
         last_txn_date, old_ticketholder_id = cursor.fetchone()
@@ -89,7 +95,7 @@ def transferTicket(db_conn, ticket_id, new_ticketholder_id, transfer_all=False, 
             SELECT *
             FROM ticket_purchase_hist
             WHERE purchased_by_id = :old_ticketholder_id
-              AND transaction_date_time = :last_txn_date
+            AND transaction_date_time = :last_txn_date
         """, {'old_ticketholder_id': old_ticketholder_id, 'last_txn_date': last_txn_date})
         for xrec in cursor:
             cursor.execute("""
@@ -121,8 +127,9 @@ def generateTicketActivity(db_conn, transaction_delay, max_transactions=1000):
     return None
 
 def sellRandomTickets(db_conn):
-    # Implement the logic to sell random tickets
-    # This function should be defined separately
+    # Implement the sellRandomTickets function here
+    # This function should perform the necessary database operations
+    # to sell random tickets
     pass
 
 import random
@@ -133,15 +140,15 @@ def generateTransferActivity(db_conn, transaction_delay=5, max_transactions=100)
     
     while txn_count < max_transactions:
         with db_conn.cursor() as cursor:
-            # Get the minimum and maximum ticket IDs
-            cursor.execute("SELECT MIN(sporting_event_ticket_id), MAX(sporting_event_ticket_id) FROM ticket_purchase_hist")
+            # Get the min and max ticket IDs
+            cursor.execute("SELECT min(sporting_event_ticket_id), max(sporting_event_ticket_id) FROM ticket_purchase_hist")
             min_tik_id, max_tik_id = cursor.fetchone()
             
             # Get a random ticket ID
             cursor.execute("SELECT MAX(sporting_event_ticket_id) FROM ticket_purchase_hist WHERE sporting_event_ticket_id <= %s", (random.uniform(min_tik_id, max_tik_id),))
             tik_id = cursor.fetchone()[0]
             
-            # Get a random new ticket holder
+            # Get a random new ticketholder
             new_ticketholder = random.randint(g_min_person_id, g_max_person_id)
             
             # Decide whether to transfer all tickets or not
@@ -150,11 +157,10 @@ def generateTransferActivity(db_conn, transaction_delay=5, max_transactions=100)
             new_price = None
             
             # Decide whether to change the price
-            chg_price = random.randint(1, 3) == 1  # 30% of the time
-            if chg_price:
+            if random.randint(1, 3) == 1:  # 30% of the time
                 cursor.execute("SELECT ticket_price FROM sporting_event_ticket WHERE id = %s", (tik_id,))
-                ticket_price = cursor.fetchone()[0]
-                new_price = ticket_price * random.uniform(0.8, 1.2)
+                original_price = cursor.fetchone()[0]
+                new_price = original_price * random.uniform(0.8, 1.2)
             
             transferTicket(db_conn, tik_id, new_ticketholder, xfer_all, new_price)
             
@@ -163,11 +169,9 @@ def generateTransferActivity(db_conn, transaction_delay=5, max_transactions=100)
     
     return None
 
-# Assuming the transferTicket function is already defined
 def transferTicket(db_conn, tik_id, new_ticketholder, xfer_all, new_price):
-    with db_conn.cursor() as cursor:
-        # Implement the logic to transfer the ticket(s)
-        pass
+    # Implement the transferTicket function here
+    pass
 
 def get_event_details(db_conn, event_id):
     """
@@ -190,10 +194,10 @@ def get_event_details(db_conn, event_id):
     with db_conn.cursor() as cursor:
         cursor.execute("""
             SELECT e.sport_type_name,
-                   h.name AS home_team_name,
-                   a.name AS away_team_name,
-                   l.name AS home_field,
-                   e.start_date_time AS date_time
+                   h.name,
+                   a.name,
+                   l.name,
+                   e.start_date_time
             FROM sporting_event e
             JOIN sport_team h ON e.home_team_id = h.id
             JOIN sport_team a ON e.away_team_id = a.id
@@ -204,11 +208,11 @@ def get_event_details(db_conn, event_id):
         row = cursor.fetchone()
         if row:
             eventRec = {
-                "sport_name": row[0],
-                "home_team_name": row[1],
-                "away_team_name": row[2],
-                "home_field": row[3],
-                "date_time": row[4]
+                'sport_name': row[0],
+                'home_team_name': row[1],
+                'away_team_name': row[2],
+                'home_field': row[3],
+                'date_time': row[4]
             }
 
     return eventRec
@@ -230,13 +234,13 @@ def get_open_events(db_conn):
     pass
 
 def sellTickets(db_conn, ticket_holder, event_id, quantity):
-    # Implement the logic to sell the specified number of tickets
-    # for the given event to the specified ticket holder
+    # Implement the logic to sell tickets for the given
+    # ticket_holder, event_id, and quantity
     pass
 
 # Assuming these global variables are defined elsewhere
 g_min_person_id = 1
-g_max_person_id = 1000000
+g_max_person_id = 1000
 
 def get_open_events(db_conn):
     event_tab = []
@@ -248,10 +252,8 @@ def get_open_events(db_conn):
             WHERE sold_out = 0
             ORDER BY start_date_time
         """)
-        rows = cursor.fetchall()
-
-    for row in rows:
-        event_tab.append(row)
+        for row in cursor:
+            event_tab.append(row)
 
     return event_tab
 

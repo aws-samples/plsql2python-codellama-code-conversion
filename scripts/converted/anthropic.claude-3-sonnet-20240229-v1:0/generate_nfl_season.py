@@ -20,6 +20,7 @@ def generate_nfl_season(db_conn):
     divisions = [row[0] for row in cursor.fetchall()]
     cursor.close()
 
+    # Helper function to get teams for a division
     def get_teams(division):
         cursor = db_conn.cursor()
         cursor.execute("""
@@ -34,11 +35,10 @@ def generate_nfl_season(db_conn):
         cursor.close()
         return teams
 
-    # Each team plays each team in their own division twice
+    # Generate games within divisions
     start_date = datetime(datetime.now().year, 9, 1)
     start_date = start_date + timedelta(days=(6 - start_date.weekday()))  # Next Sunday
     date_offset = 0
-
     for division in divisions:
         teams = get_teams(division)
         for home_team in teams:
@@ -52,10 +52,9 @@ def generate_nfl_season(db_conn):
                 """, (sport_type_name, home_team[0], away_team[0], home_team[1], event_date))
                 db_conn.commit()
                 cursor.close()
-                event_date = event_date.date() + timedelta(days=7)
+                event_date += timedelta(days=7)
 
-            event_date = event_date.date() + timedelta(days=(6 - event_date.weekday()))
-
+            event_date = event_date + timedelta(days=(6 - event_date.weekday()))
             for away_team in [t for t in teams if t[0] < home_team[0]]:
                 event_date += timedelta(hours=random.randint(12, 19))
                 cursor = db_conn.cursor()
@@ -65,66 +64,36 @@ def generate_nfl_season(db_conn):
                 """, (sport_type_name, home_team[0], away_team[0], home_team[1], event_date))
                 db_conn.commit()
                 cursor.close()
-
             date_offset += 1
 
-    # Each team plays each team in another division once
-    event_date = event_date.date() + timedelta(days=7)
-    event_date += timedelta(hours=random.randint(12, 19))
-    date_tab = [event_date] * 16
-
+    # Generate games between divisions
     nfc_divisions = ['NFC North', 'NFC East', 'NFC South', 'NFC West']
     afc_divisions = ['AFC North', 'AFC East', 'AFC South', 'AFC West']
 
-    for i in range(4):
-        nfc_teams = get_teams(nfc_divisions[i])
-        afc_teams = get_teams(afc_divisions[i])
-        for j, home_team in enumerate(nfc_teams + afc_teams):
-            for away_team in ([t for t in afc_teams if t != home_team] if home_team in nfc_teams else [t for t in nfc_teams if t != home_team]):
+    def generate_cross_division_games(nfc_divs, afc_divs, event_dates):
+        for i in range(4):
+            nfc_teams = get_teams(nfc_divs[i])
+            afc_teams = get_teams(afc_divs[i])
+            for j, (home_team, away_team) in enumerate(zip(nfc_teams, afc_teams), start=1):
                 cursor = db_conn.cursor()
                 cursor.execute("""
                     INSERT INTO sporting_event (sport_type_name, home_team_id, away_team_id, location_id, start_date_time)
                     VALUES (%s, %s, %s, %s, %s)
-                """, (sport_type_name, home_team[0], away_team[0], home_team[1], date_tab[j]))
+                """, (sport_type_name, home_team[0], away_team[0], home_team[1], event_dates[j]))
                 db_conn.commit()
                 cursor.close()
 
-    event_date = event_date.date() + timedelta(days=7)
-    event_date += timedelta(hours=random.randint(12, 19))
-    date_tab = [event_date] * 16
+    event_date = event_date + timedelta(days=7)
+    event_dates = [event_date + timedelta(hours=random.randint(12, 19)) for _ in range(16)]
+    generate_cross_division_games(nfc_divisions, afc_divisions, event_dates)
 
-    afc_divisions = ['AFC West', 'AFC North', 'AFC East', 'AFC South']
+    event_date = event_date + timedelta(weeks=1)
+    event_dates = [event_date + timedelta(hours=random.randint(12, 19)) for _ in range(16)]
+    generate_cross_division_games(nfc_divisions, afc_divisions[::-1], event_dates)
 
-    for i in range(4):
-        nfc_teams = get_teams(nfc_divisions[i])
-        afc_teams = get_teams(afc_divisions[i])
-        for j, home_team in enumerate(nfc_teams + afc_teams):
-            for away_team in ([t for t in afc_teams if t != home_team] if home_team in nfc_teams else [t for t in nfc_teams if t != home_team]):
-                cursor = db_conn.cursor()
-                cursor.execute("""
-                    INSERT INTO sporting_event (sport_type_name, home_team_id, away_team_id, location_id, start_date_time)
-                    VALUES (%s, %s, %s, %s, %s)
-                """, (sport_type_name, home_team[0], away_team[0], home_team[1], date_tab[j]))
-                db_conn.commit()
-                cursor.close()
+    event_date = event_date + timedelta(weeks=1)
+    event_dates = [event_date + timedelta(hours=random.randint(12, 19)) for _ in range(16)]
+    generate_cross_division_games(nfc_divisions[:3], afc_divisions[1:], event_dates[:12])
 
-    # Play three more random games
-    event_date = event_date.date() + timedelta(days=7)
-    event_date += timedelta(hours=random.randint(12, 19))
-    date_tab = [event_date] * 16
-
-    afc_divisions = ['AFC South', 'AFC West', 'AFC North', 'AFC East']
-
-    for i in range(3):
-        nfc_teams = get_teams(nfc_divisions[i])
-        afc_teams = get_teams(afc_divisions[i])
-        for j, home_team in enumerate(nfc_teams + afc_teams):
-            for away_team in ([t for t in afc_teams if t != home_team] if home_team in nfc_teams else [t for t in nfc_teams if t != home_team]):
-                cursor = db_conn.cursor()
-                cursor.execute("""
-                    INSERT INTO sporting_event (sport_type_name, home_team_id, away_team_id, location_id, start_date_time)
-                    VALUES (%s, %s, %s, %s, %s)
-                """, (sport_type_name, home_team[0], away_team[0], home_team[1], date_tab[j]))
-                db_conn.commit()
-                cursor.close()
+# No return value in the original PL/SQL code
 

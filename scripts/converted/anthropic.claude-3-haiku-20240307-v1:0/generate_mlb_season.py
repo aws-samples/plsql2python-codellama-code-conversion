@@ -1,9 +1,9 @@
 import cx_Oracle
 
-import random
 from datetime import datetime, timedelta
+import random
 
-def generate_mib_season(db_conn):
+def generat_mib_season(db_conn):
     sport_type_name = None
     event_date = None
     date_offset = 0
@@ -13,7 +13,9 @@ def generate_mib_season(db_conn):
         cursor.execute("SELECT name FROM sport_type WHERE LOWER(name) = 'baseball'")
         sport_type_name = cursor.fetchone()[0]
 
-        # Iterate over the home teams
+    # Every team plays every other team twice, each has home field advantage once
+    with db_conn.cursor() as cursor:
+        # Get the list of MLB baseball teams
         cursor.execute("""
             SELECT id, home_field_id
             FROM sport_team
@@ -30,70 +32,60 @@ def generate_mib_season(db_conn):
                 timedelta(days=7 * date_offset)
             )
 
-            # Iterate over the away teams
-            cursor.execute("""
-                SELECT id, home_field_id
-                FROM sport_team
-                WHERE id > :home_team_id
-                AND sport_league_short_name = 'MLB'
-                AND sport_type_name = 'baseball'
-                ORDER BY id
-            """, home_team_id=home_team_id)
-            for arec in cursor:
-                away_team_id, away_field_id = arec
-
-                # Generate a random event time and insert the event
-                event_date += timedelta(hours=random.uniform(12, 19))
-                cursor.execute("""
-                    INSERT INTO sporting_event(
-                        sport_type_name, home_team_id, away_team_id,
-                        location_id, start_date_time
-                    ) VALUES (
-                        :sport_type_name, :home_team_id, :away_team_id,
-                        :home_field_id, :event_date
+            # Schedule games against teams with higher IDs
+            with db_conn.cursor() as cursor2:
+                cursor2.execute("""
+                    SELECT id, home_field_id
+                    FROM sport_team
+                    WHERE id > :home_team_id
+                    AND sport_league_short_name = 'MLB'
+                    AND sport_type_name = 'baseball'
+                    ORDER BY id
+                """, {'home_team_id': home_team_id})
+                for arec in cursor2:
+                    away_team_id, away_field_id = arec
+                    event_date += timedelta(hours=random.uniform(12, 19))
+                    insert_sporting_event(
+                        db_conn, sport_type_name, home_team_id, away_team_id,
+                        home_field_id, event_date
                     )
-                """, {
-                    'sport_type_name': sport_type_name,
-                    'home_team_id': home_team_id,
-                    'away_team_id': away_team_id,
-                    'home_field_id': home_field_id,
-                    'event_date': event_date
-                })
+                    event_date += timedelta(days=7)
 
-                # Set the next event date
-                event_date = (event_date + timedelta(days=7)).replace(hour=0, minute=0, second=0)
-
-            # Iterate over the remaining away teams
-            cursor.execute("""
-                SELECT id, home_field_id
-                FROM sport_team
-                WHERE id < :home_team_id
-                AND sport_league_short_name = 'MLB'
-                AND sport_type_name = 'baseball'
-                ORDER BY id
-            """, home_team_id=home_team_id)
-            for h2_rec in cursor:
-                away_team_id, away_field_id = h2_rec
-
-                # Generate a random event time and insert the event
-                event_date = (event_date - timedelta(days=7)) + timedelta(hours=random.uniform(12, 19))
-                cursor.execute("""
-                    INSERT INTO sporting_event(
-                        sport_type_name, home_team_id, away_team_id,
-                        location_id, start_date_time
-                    ) VALUES (
-                        :sport_type_name, :home_team_id, :away_team_id,
-                        :home_field_id, :event_date
+            # Schedule games against teams with lower IDs
+            event_date = datetime.combine(
+                NEXT_DAY(event_date, 'wednesday'), datetime.min.time()
+            )
+            with db_conn.cursor() as cursor3:
+                cursor3.execute("""
+                    SELECT id, home_field_id
+                    FROM sport_team
+                    WHERE id < :home_team_id
+                    AND sport_league_short_name = 'MLB'
+                    AND sport_type_name = 'baseball'
+                    ORDER BY id
+                """, {'home_team_id': home_team_id})
+                for h2_rec in cursor3:
+                    away_team_id, away_field_id = h2_rec
+                    event_date -= timedelta(days=7)
+                    event_date += timedelta(hours=random.uniform(12, 19))
+                    insert_sporting_event(
+                        db_conn, sport_type_name, home_team_id, away_team_id,
+                        home_field_id, event_date
                     )
-                """, {
-                    'sport_type_name': sport_type_name,
-                    'home_team_id': home_team_id,
-                    'away_team_id': away_team_id,
-                    'home_field_id': home_field_id,
-                    'event_date': event_date
-                })
 
             date_offset += 1
 
-    return None
+def insert_sporting_event(db_conn, sport_type_name, home_team_id, away_team_id, location_id, start_date_time):
+    with db_conn.cursor() as cursor:
+        cursor.execute("""
+            INSERT INTO sporting_event(sport_type_name, home_team_id, away_team_id, location_id, start_date_time)
+            VALUES(:sport_type_name, :home_team_id, :away_team_id, :location_id, :start_date_time)
+        """, {
+            'sport_type_name': sport_type_name,
+            'home_team_id': home_team_id,
+            'away_team_id': away_team_id,
+            'location_id': location_id,
+            'start_date_time': start_date_time
+        })
+        db_conn.commit()
 
