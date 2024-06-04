@@ -88,6 +88,9 @@ if __name__ == '__main__':
                 converter = ClaudeConverter(model_id=args.model_id)
             elif args.model_id.startswith('meta'):
                 converter = BedrockLlamaConverter(model_id=args.model_id)
+            else:
+                # You should not be here, argparse shouldn't have let you
+                raise RuntimeError('Model ID not supported')
         case 'sagemaker':
             converter = CodeLlamaConverter(sagemaker_endpoint=args.endpoint_name)
         case _:
